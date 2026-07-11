@@ -1,0 +1,13 @@
+# Dependencies
+node_modules/
+
+# Python caches
+__pycache__/
+*.pyc
+backend/__pycache__/
+
+# Build output (regenerated on deploy / via `npm run build`)
+frontend/dist/
+
+# Local env
+.env
