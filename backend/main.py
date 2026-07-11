@@ -155,8 +155,8 @@ class InsightsRequest(BaseModel):
 # ---------------------------------------------------------------------------
 # Dataset endpoints
 # ---------------------------------------------------------------------------
-@app.get("/")
-def root():
+@app.get("/api/health")
+def health():
     return {"service": "AI Data Analyzer", "status": "ok", "version": "1.0.0"}
 
 
