@@ -10,6 +10,9 @@ services:
     name: ai-data-analyzer
     runtime: python
     plan: free
-    buildCommand: cd frontend && npm install && npm run build
-    startCommand: cd backend && uvicorn main:app --host 0.0.0.0 --port $PORT
+    # Install Python deps FIRST (this replaced Render's default pip step once we
+    # set a custom buildCommand), then build the frontend.
+    buildCommand: python -m pip install -r requirements.txt && cd frontend && npm install && npm run build
+    # `python -m uvicorn` is more reliable than the bare `uvicorn` command.
+    startCommand: cd backend && python -m uvicorn main:app --host 0.0.0.0 --port $PORT
     healthCheckPath: /
