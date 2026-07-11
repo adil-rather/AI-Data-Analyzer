@@ -19,10 +19,17 @@ const TITLES = {
 export default function App() {
   const [view, setView] = useState("upload");
   const [profile, setProfile] = useState(null);
+  const [navOpen, setNavOpen] = useState(false);
 
   function handleLoaded(data, name) {
     setProfile({ ...data, displayName: name });
     setView("dashboard");
+  }
+
+  // Closes the mobile drawer whenever a nav item is chosen.
+  function handleNav(next) {
+    setView(next);
+    setNavOpen(false);
   }
 
   const hasData = !!profile;
@@ -30,10 +37,20 @@ export default function App() {
 
   return (
     <div className="app">
-      <Sidebar active={view} onNavigate={setView} hasData={hasData} />
+      {/* Desktop sidebar (hidden on phones via CSS) */}
+      <Sidebar active={view} onNavigate={handleNav} hasData={hasData} />
+
+      {/* Mobile drawer + backdrop (only shown on phones) */}
+      <div className={`mobile-nav ${navOpen ? "open" : ""}`}>
+        <Sidebar active={view} onNavigate={handleNav} hasData={hasData} />
+      </div>
+      {navOpen && <div className="backdrop" onClick={() => setNavOpen(false)} />}
 
       <main className="main">
         <div className="topbar">
+          <button className="menu-btn" onClick={() => setNavOpen(true)} aria-label="Open navigation">
+            ☰
+          </button>
           <div className="title">
             <h2>{t.h}</h2>
             <p>{t.p}</p>
