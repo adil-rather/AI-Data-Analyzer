@@ -1,283 +1,184 @@
+<img src="frontend/public/project-icon.png" width="96" height="96" alt="AI Data Analyzer project mark">
+
 # AI Data Analyzer
 
-> Made by **ADIL_RATHER** · Date: 10/07/2026 · © Copyright 2026 ADIL_RATHER. All rights reserved.
+A practical workbench for understanding tabular data, exploring patterns and evaluating machine-learning baselines. Built by **Adil Hassan Rather / Rather Builds** with React, FastAPI, DuckDB and scikit-learn.
 
-A machine-learning studio that predicts trends from large datasets, with a
-custom dark glassmorphism UI. Built with **React + Vite** (frontend) and
-**FastAPI** (Python ML backend).
+Version 2 rebuilds the original interface and data lifecycle. It uses a forest-and-stone workspace, distinct chart colors, responsive tables, accessible navigation and subtle motion. More importantly, uploaded datasets are isolated by browser session, large CSVs are stored on disk, and model outputs explain what was actually analyzed.
 
-## Features
+**The name refers to machine-learning analysis. This app does not call an LLM, generate explanations with an external AI service, or require an API key.**
 
-- **Data Source** — upload CSV/Excel or use a built-in synthetic dataset.
-- **Overview** — automatic column profiling, type detection, stats & preview.
-- **Trend Forecast** — linear trend + FFT-detected seasonality, with a 95%
-  confidence band.
-- **Clustering** — K-Means segmentation with PCA projection and silhouette score.
-- **Classification** — RandomForest with accuracy / precision / recall / F1,
-  confusion matrix and feature importances.
-- **Insights** — correlation heatmap, strongest pairs, key drivers and
-  z-score anomaly detection.
+## Read the project in this order
 
-All processing happens locally — no data leaves your machine.
+1. This README: setup, workflow and major decisions.
+2. [Architecture and request lifecycle](docs/architecture.md): how the code fits together, from file upload to rendered result.
+3. [Analysis methods](docs/analysis-methods.md): calculations, validation, metrics and limitations of every model.
+4. [API reference](docs/api.md): routes, request fields and error handling.
+5. [Upload safety and privacy](docs/security.md): actual protections, resource boundaries and remaining risks.
+6. [Deployment and maintenance](docs/deployment.md): Render, testing, updates and troubleshooting.
+7. [Project PNG and asset notes](assets/README.md): files, colors and how the icon was made.
 
-## Run it
+These documents describe the implementation, including its limits. They are also intended as an explanation you can use when presenting the project.
 
-**Backend** (terminal 1):
-```bash
-cd backend
-pip install -r requirements.txt
-python -m uvicorn main:app --host 0.0.0.0 --port 8000
+## What you can do
+
+| Workspace      | Purpose                                                                          | Main output                                                                     |
+| -------------- | -------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| Data Source    | Upload UTF-8 CSV or a values-only `.xlsx` workbook; try four synthetic samples   | An isolated, temporary dataset                                                  |
+| Overview       | Inspect the entire table's shape, column types, missing values and distributions | Full-dataset statistics, first-50-row preview, column inspector                 |
+| Trend Forecast | Extend an ordered numeric series with a simple trend/seasonal baseline           | Actual/fitted/projected chart, chronological holdout errors, forecast CSV       |
+| Clustering     | Group complete numeric observations with standardized K-Means                    | Colored projection, silhouette score, cluster sizes and original-unit centroids |
+| Classification | Predict a category from separate numeric predictors                              | Stratified holdout scores, feature importance and confusion matrix              |
+| Insights       | Compare numeric variables and flag unusual observed values                       | Correlations, strongest pairs and z-score flags                                 |
+
+The four built-in datasets are **synthetic**, deterministic and generated with seed 42: retail sales, customer segments, sensor telemetry and stock prices. They are examples, not evidence about actual customers, markets or business performance.
+
+## Large CSVs: storage is different from model size
+
+The app has no fixed 10 MB upload limit or 25,000-row ingestion limit. CSVs with millions of rows can be ingested into a temporary DuckDB table without first loading the complete file into pandas. A regression test uploads **1,000,001 rows** and checks that all rows remain stored and counted.
+
+This does not mean unlimited hosting capacity. Available disk space, request timeouts, the host's upload limits and computational resources still apply. CSV is recommended for large datasets; expanded Excel content is deliberately bounded to protect its XML parser.
+
+- **Overview:** counts, missing values, ranges, means, standard deviations and histogram bins use the stored table. Large-table medians and high-cardinality distinct counts are approximate and labeled accordingly.
+- **Clustering, classification, insights:** all rows when there are at most 25,000; otherwise a reproducible reservoir sample of 25,000 rows.
+- **Forecast:** all rows up to 25,000; otherwise the most recent 25,000 observations by selected date, or the last 25,000 in file order.
+- **Plots:** bounded separately to keep the browser responsive. Clustering displays at most 2,000 points; the model may use more observations.
+- **Text preview:** long text is previewed to 256 characters; the stored source values are retained.
+
+Every model result includes an `analysisScope` showing `sourceRows`, `analyzedRows` and `method`. Sampling is never presented as a full-dataset model. A sample can miss rare groups or unusual events; use a representative dataset and interpret results accordingly.
+
+## Requirements
+
+- Python **3.11** (development tested with 3.11.15).
+- Node.js **24** (development tested with 24.17.0; package engine requires >=22.22.2).
+- A modern browser and enough temporary disk space for the input, database and intermediate files.
+- Chrome for the Windows browser-test commands below, or Playwright Chromium on Linux/macOS.
+
+No database server, Supabase project, AI subscription or environment secrets are required. DuckDB is an embedded local database library. Production still needs a running Python service; static hosting alone cannot run the API.
+
+## Run the complete app on Windows
+
+From the repository root in PowerShell:
+
+```powershell
+python -m venv .venv
+.venv\Scripts\python.exe -m pip install -r backend/requirements-dev.txt
+npm ci --prefix frontend
+npm run build --prefix frontend
+.venv\Scripts\python.exe -m uvicorn main:app --app-dir backend --host 127.0.0.1 --port 8000 --workers 1
 ```
 
-**Frontend** (terminal 2):
+Open [http://127.0.0.1:8000](http://127.0.0.1:8000). One Python service serves both the API and the built frontend. Activation is optional because the commands explicitly use the virtual environment.
+
+For a production-only install, use `requirements.txt` at the repository root instead of the development requirements. It includes the pinned backend runtime dependencies.
+
+### macOS / Linux equivalent
+
+```bash
+python3.11 -m venv .venv
+.venv/bin/python -m pip install -r backend/requirements-dev.txt
+npm ci --prefix frontend
+npm run build --prefix frontend
+.venv/bin/python -m uvicorn main:app --app-dir backend --host 127.0.0.1 --port 8000 --workers 1
+```
+
+### Develop with hot reload
+
+Keep the API running on port 8000. In a second terminal:
+
 ```bash
 cd frontend
-npm install
 npm run dev
 ```
 
-Open http://localhost:5173
+Open [http://localhost:5173](http://localhost:5173). Vite proxies `/api` to port 8000; keep the browser on one origin so its session cookie stays consistent. React builds the interface; Vite is the development server and build tool, not an alternative to React.
 
-## Project layout
+## First useful workflow
 
-```
-ai-data-analyzer/
-├── backend/
-│   ├── main.py          # FastAPI app + ML endpoints
-│   ├── sample_data.py   # synthetic datasets (retail, customers, sensors, stocks)
-│   └── requirements.txt
-└── frontend/
-    ├── src/App.jsx
-    ├── src/components/  # UI primitives + sidebar
-    ├── src/views/       # Upload, Dashboard, Forecast, Clustering, Classification, Insights
-    └── src/api.js
+1. Choose **Retail Sales → Load sample**. Overview opens with the dataset's actual statistics.
+2. Select a table column or the inspector dropdown. Check its missing count and distribution.
+3. Use **Trend Forecast**, select `sales`, order by `date`, leave a 30-step horizon and run.
+4. Inspect the holdout MAE/RMSE, historical fit and assumptions. Export the forecast values if useful.
+5. Return to Data Source and load **Customer Segments**. Try clustering `income`, `spending_score` and `age` with K=3.
+6. In Classification, predict `segment` from separate numeric predictors. Inspect the confusion matrix, not just accuracy.
+7. Load **Sensor Telemetry** for Insights. Review flagged rows as candidates for investigation, not automatically bad data.
+8. **Clear data** removes the temporary table and analysis state. A failed replacement upload preserves the previous dataset.
 
----
+Navigation preserves completed analysis while the same dataset is loaded. Changing a parameter marks existing results as outdated until you run again. Reload restores the server dataset if its session is still alive; completed model results are browser-memory state and are not restored after a reload.
 
-# How It Works (Inside the Project)
+## Data privacy and upload safety
 
-This section explains what the code actually does and *why* each piece exists,
-written as if you were explaining how you built it from scratch.
+**On the hosted app, the file leaves your device and is processed on the server.** When you run the complete app locally, processing stays on that local server. No uploaded values are sent to an external AI provider.
 
-## 1. Big picture: two services, one job
+Datasets are kept in temporary disk-backed tables owned by an opaque HTTP-only browser-session cookie. They expire after 60 minutes without an API access, are removed by Clear data, and are discarded on normal server shutdown. Expiry/cleanup is not a promise of forensic erasure from the host's storage. A server restart also invalidates the process-local session registry.
 
-The app is split into two independent programs that talk over the network:
+The upload path accepts only CSV and `.xlsx`, validates structure and text, inspects Excel archives, rejects formulas/macros/embedded objects/external workbook relationships, and never executes uploaded cells or scripts. Parsers and models have resource controls, and CSV export neutralizes spreadsheet formulas. These protections are **not an antivirus service or a guarantee against every malicious file**. Use non-sensitive data. See [the complete threat model](docs/security.md).
 
-```
- Browser (React UI)  ──HTTP /api/*──▶  FastAPI backend (Python ML)
- http://localhost:5173              http://localhost:8000
-```
+## Tests and checks
 
-- **Frontend (React + Vite)** — draws the buttons, tables, and charts. It knows
-  nothing about math; it only sends JSON requests and renders JSON responses.
-- **Backend (FastAPI + Python)** — receives those requests, runs the actual
-  machine-learning, and returns plain JSON.
+Backend, from the repository root:
 
-**Why split it?** The heavy lifting (pandas, scikit-learn, numpy) is Python
-territory, while the interface (reactive UI, charts) is JavaScript territory.
-Keeping them separate means each side uses the best tool for its job and can be
-developed/run independently.
-
-**How do they connect without errors?** In development, Vite is configured
-(`vite.config.js`) to *proxy* every `/api` request to `http://localhost:8000`.
-So the browser only ever talks to `localhost:5173`, and Vite silently forwards
-the `/api/*` calls to the backend. This avoids CORS (cross-origin) headaches
-entirely. The backend also sets a permissive `CORSMiddleware` as a safety net.
-
-## 2. What happens when you use it (request flow)
-
-1. You click something in the UI (e.g. "Load sample dataset").
-2. The React view calls a function from `src/api.js`, e.g. `api.loadSample(...)`.
-3. `api.js` does `fetch("/api/sample", ...)`. Vite rewrites that to
-   `http://localhost:8000/api/sample`.
-4. FastAPI matches the URL to a function decorated with `@app.post("/api/sample")`
-   in `backend/main.py`, runs the Python, and returns JSON.
-5. React receives the JSON and re-renders the page (table, chart, stats).
-
-No page reloads — it's a single-page app; only the data moves back and forth.
-
-## 3. The backend — how it was built (`backend/main.py`)
-
-**Framework: FastAPI.** Chosen because it gives automatic interactive API docs
-at `/docs`, validates request bodies with type hints (Pydantic), and is
-asynchronous-friendly. Each ML capability is just a function with an
-`@app.post(...)` decorator.
-
-**Datasets live in memory, not a database.** When you upload a file or load a
-sample, the DataFrame is stored in a Python dictionary `_STORE` keyed by an ID
-like `ds_1`:
-
-```python
-_STORE: dict[str, pd.DataFrame] = {}
-# upload → _register(df) stores it and returns {"datasetId": "ds_1", ...}
+```powershell
+.venv\Scripts\python.exe -m pytest backend/tests -q
+.venv\Scripts\ruff.exe check backend --select F
+.venv\Scripts\ruff.exe format --check backend
 ```
 
-**Why in-memory?** This is a local, single-user analysis tool. A database would
-add setup, files, and complexity for zero benefit. The trade-off: if you restart
-the backend, the loaded datasets are gone (you just re-upload). Every later
-request (`/api/forecast`, `/api/cluster`, …) references that `datasetId` to
-fetch the same DataFrame back via `_get(datasetId)`.
+Frontend:
 
-**Column-type detection (`_column_type`).** Before any analysis, the backend
-inspects each column and labels it `numeric`, `datetime`, `categorical`, or
-`text` using simple heuristics (is it numbers? does it parse as dates? how many
-unique values?). This drives the UI: numeric columns become chartable axes,
-categorical columns become dropdown options, etc.
-
-**Profiling (`_profile`).** Computes per-column statistics (mean/std/min/max for
-numbers; value counts for categories) plus a 50-row preview, and returns it as
-the "Overview" page.
-
-### The five ML endpoints
-
-**Forecast (`/api/forecast`)** — predicts future values of one numeric column.
-- Fits a **linear trend** with `np.polyfit` (least-squares line through the data).
-- Subtracts the trend to get *residuals*, then runs an **FFT**
-  (`np.fft.rfft`) on those residuals to find the dominant repeating period
-  (seasonality, e.g. weekly/monthly). Why FFT? It's the fastest way to detect a
-  repeating cycle hidden in noisy data.
-- Reconstructs `trend + seasonal` and projects it forward `periods` steps.
-- Draws a **95% confidence band** as `±1.96 × residual_std` (the statistical
-  rule for "about 95% of normal variation").
-- Returns `r2` (how well the line fits) and a plain-language `summary`
-  (direction, next value, total change).
-
-**Cluster (`/api/cluster`)** — K-Means segmentation.
-- Scales features with `StandardScaler` (why: K-Means uses distance, so
-  features on wildly different scales would dominate).
-- Runs `KMeans(n_clusters=...)`.
-- If there are more than 2 features, it reduces them to 2 dimensions with
-  **PCA** so the result can be drawn on an X/Y scatter plot.
-- Reports a **silhouette score** — a 0–1 quality metric telling you how
-  well-separated the clusters are.
-
-**Classify (`/api/classify`)** — trains a **RandomForest** to predict a
-categorical column from numeric features.
-- Splits data into train/test (`train_test_split`, 75/25 by default).
-- Encodes the target labels with `LabelEncoder`.
-- Trains `RandomForestClassifier(n_estimators=120)`. Why RandomForest? It handles
-  non-linear patterns, rarely overfits, and naturally reports **feature
-  importances** — which inputs actually drive the prediction.
-- Returns accuracy / precision / recall / F1, a **confusion matrix**, and the
-  ranked feature importances.
-
-**Insights (`/api/insights`)** — the "so what?" page.
-- Builds a **correlation matrix** (`df.corr()`) and ranks the strongest pairs.
-- Flags **anomalies** using a **z-score**: for each numeric row,
-  `z = (value − mean) / std`; any row whose z-score exceeds the threshold
-  (default 3.0, i.e. >3 standard deviations) is flagged as an outlier.
-
-### Synthetic data (`backend/sample_data.py`)
-
-Instead of forcing you to find a dataset, the app ships four generated ones:
-`retail_sales`, `customer_segments`, `sensor_telemetry`, `stock_prices`. Each is
-built with numpy/pandas and deliberately contains **trends + seasonality + noise**
-(and, for sensors, **injected anomalies**) so every feature has something
-interesting to show. A fixed random seed (`default_rng(42)`) makes them
-reproducible — the same data every time. **Why synthetic?** The demos work
-offline, instantly, with no upload step, and they reliably exercise each
-algorithm.
-
-## 4. The frontend — how it was built (`frontend/src/`)
-
-**Stack: React 18 + Vite 5 + Recharts.**
-- **Vite** was chosen as the dev server/bundler because it starts instantly and
-  hot-reloads on save. The `npm run dev` script is literally just `vite`.
-- **React** gives a component model: small reusable pieces composed into pages.
-- **Recharts** is the charting library (the line/bar/scatter/heatmap visuals).
-
-**State: plain React, no extra library.** `App.jsx` holds two pieces of state:
-`view` (which page is showing) and `profile` (the loaded dataset's schema +
-`datasetId`). When data loads, `handleLoaded()` stores the profile and switches
-to the Dashboard. There's no Redux/Vite-router — navigation is just
-`setView("forecast")` toggling which view component renders. (A router library
-would be overkill for six static pages.)
-
-**The views** (`src/views/`) each own one feature:
-`Upload` → `Dashboard` → `Forecast` → `Clustering` → `Classification` →
-`Insights`. Each calls the matching `api.*` function and renders the JSON.
-The `Sidebar` (`components/Sidebar.jsx`) lists these and greys out the analysis
-pages until a dataset is loaded (`hasData`).
-
-**API layer (`src/api.js`).** One small module wraps `fetch` so the rest of the
-app never touches URLs or error parsing directly. It centralizes the `/api`
-prefix and extracts FastAPI's `detail` error messages. Upload is handled
-slightly differently (it sends `FormData` for the file instead of JSON).
-
-**Styling (`src/index.css`).** A single hand-written stylesheet, no UI framework.
-It implements the **dark glassmorphism** look via CSS custom properties
-(`--panel`, `--grad`, etc.), translucent panels with `backdrop-filter: blur()`,
-and a blue→purple→teal gradient accent. Fonts are *Inter* (body) and *Space
-Grotesk* (headings). Everything is responsive — below 1024px the sidebar hides
-and grids stack.
-
-## 5. Why "everything runs locally"
-
-Every computation happens in the backend's RAM on *your* machine. Files are
-parsed in memory and never uploaded to any server. That's why the sidebar footer
-says *"Models run locally on your machine. No data leaves this device."* — it's
-a real property of the architecture, not a slogan.
-
-## 6. Tech-stack summary (what & why)
-
-| Piece | Library / Tool | Why it's here |
-|---|---|---|
-| Backend web framework | **FastAPI** | Auto docs, typed validation, async, minimal boilerplate |
-| Backend ML | **scikit-learn** | Battle-tested KMeans, RandomForest, PCA, metrics |
-| Backend data | **pandas** + **numpy** | Table handling, statistics, FFT, vector math |
-| Excel support | **openpyxl** | Reads `.xlsx`/`.xls` uploads |
-| File uploads | **python-multipart** | Lets FastAPI accept `multipart/form-data` files |
-| Dev server / bundler | **Vite** | Instant dev server, hot reload, simple build |
-| UI | **React 18** | Component model, reactive state |
-| Charts | **Recharts** | Declarative React charts |
-| Styling | Hand-written **CSS** | Full control of the glassmorphism design, zero dependency |
-
----
-
-## 7. Behind the Build — Q&A (the questions you'd get)
-
-**Q: What does this app actually do?**
-A: It's a local ML studio. You give it tabular data (CSV/Excel or a built-in
-sample), and it profiles it, forecasts trends, clusters rows into segments,
-trains a classifier, and surfaces correlations + anomalies — all in a visual UI.
-
-**Q: How does data get into the app?**
-A: Two ways — (1) upload a `.csv`/`.xlsx` via the Data Source page (parsed by
-pandas in the backend), or (2) click one of four synthetic sample datasets
-generated on the fly by `sample_data.py`. Either way it's stored in the
-backend's in-memory `_STORE` and handed a `datasetId`.
-
-**Q: How does the frontend talk to the backend?**
-A: Through HTTP `POST`/`GET` calls to `/api/*` URLs, defined once in
-`src/api.js`. Vite proxies those to `localhost:8000` in dev, so there are no
-CORS issues.
-
-**Q: Where does the actual math happen?**
-A: 100% in `backend/main.py` using numpy/pandas/scikit-learn. The frontend only
-sends parameters (e.g. which column to forecast) and draws the returned numbers.
-
-**Q: Why KMeans for clustering and RandomForest for classification?**
-A: KMeans is the simplest, fastest way to find natural groupings and gives a
-clean silhouette score. RandomForest is robust, handles messy real-world data,
-and importantly reports which features matter most — exactly what users want to
-see.
-
-**Q: How does forecasting find seasonality?**
-A: It fits a straight trend line, looks at what's *left over* (the residuals),
-and runs an FFT to find the strongest repeating cycle in that leftover signal.
-
-**Q: Is my data sent anywhere?**
-A: No. All parsing and modeling happen in the backend process on your machine.
-Nothing is transmitted to an external server.
-
-**Q: What's the catch of the in-memory design?**
-A: If you restart the backend, loaded datasets are cleared and you re-upload.
-For a local single-user tool that's an acceptable trade-off versus running a
-database.
-
-**Q: How would I add a new analysis feature?**
-A: (1) Add an endpoint function in `backend/main.py` returning JSON; (2) add a
-matching call in `src/api.js`; (3) create a view in `src/views/` and register it
-in `App.jsx` + `Sidebar.jsx`. That three-step pattern covers every existing
-feature.
+```bash
+npm test --prefix frontend
+npm run build --prefix frontend
+npm audit --prefix frontend --omit=dev
 ```
+
+Browser tests, with the built frontend:
+
+```powershell
+cd frontend
+$env:ANALYZER_PYTHON='../.venv/Scripts/python.exe'
+$env:PLAYWRIGHT_CHROME_EXECUTABLE='C:/Program Files/Google/Chrome/Application/chrome.exe'
+npm run test:e2e
+```
+
+On Linux CI, the workflow installs Playwright Chromium. Browser tests cover real sample/upload/model flows, navigation, phone controls and session cleanup. The backend suite covers isolation, malformed uploads, workbook active content, model edge cases, metadata collisions and large-file ingestion. No finite test suite proves an application bug-free.
+
+## Source map
+
+```text
+backend/
+  main.py             API composition, session/security middleware, job slots, SPA host
+  upload_parser.py    one-file multipart parsing, bounded headers and memory spool
+  dataset_engine.py   streamed uploads, workbook inspection, DuckDB profiles and model subsets
+  store.py            session ownership, expiry, atomic replacement and cleanup
+  analysis.py         forecasting, clustering, classification and insights
+  schemas.py          typed request bounds
+  tabular.py          finite JSON-safe scalar conversion
+  sample_data.py      four reproducible synthetic data generators
+  tests/              API, model, file-safety and large-data regressions
+frontend/
+  src/App.jsx         shell, hash navigation, dataset lifecycle and result cache
+  src/api.js          same-origin API, readable errors, cancellation, upload progress
+  src/hooks/          cached analysis state and motion preference
+  src/components/     navigation, dialogs, tables, fields and chart primitives
+  src/views/          the six real workflows
+  src/lib.js          shared colors, number formatting and formula-safe CSV export
+  src/index.css       responsive design tokens, layouts and motion
+  src/tests/          component and API-client regressions
+  e2e/                browser workflow tests
+  public/             PNG mark and favicon
+docs/                 architecture, methods, API, security and deployment guides
+assets/               original generated PNG and provenance
+```
+
+## Deployment
+
+The existing Render service can deploy this repository's `main` branch. See [deployment instructions](docs/deployment.md) before changing build/runtime settings. Keep **one worker and one instance**: browser-session ownership currently lives in process memory, even though table contents are on disk.
+
+For durable workspaces, multiple instances, stronger public abuse resistance or full-data model jobs at much larger scale, the next step is shared object storage, a durable registry, authenticated access and a bounded background-job queue. They are separate architectural work, not features silently claimed by this version.
+
+## Project identity and ownership
+
+The [512px transparent project PNG](frontend/public/project-icon.png) is suitable for a portfolio cover or project listing. The [high-resolution original](assets/project-icon-original.png) is preserved. The icon uses forest, sage and copper; [asset notes](assets/README.md) record its AI-assisted generation and optimization.
+
+© 2026 Adil Hassan Rather / Rather Builds. The repository has no separate open-source license grant; dependency and font licenses remain their respective owners'.

@@ -12,7 +12,12 @@ services:
     plan: free
     # Install Python deps FIRST (this replaced Render's default pip step once we
     # set a custom buildCommand), then build the frontend.
-    buildCommand: python -m pip install -r requirements.txt && cd frontend && npm install && npm run build
+    buildCommand: python -m pip install -r requirements.txt && npm ci --prefix frontend && npm run build --prefix frontend
     # `python -m uvicorn` is more reliable than the bare `uvicorn` command.
-    startCommand: cd backend && python -m uvicorn main:app --host 0.0.0.0 --port $PORT
+    startCommand: python -m uvicorn main:app --app-dir backend --host 0.0.0.0 --port $PORT --workers 1
     healthCheckPath: /api/health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.15
+      - key: NODE_VERSION
+        value: 24.17.0

@@ -1,60 +1,67 @@
-import React from "react";
-
-const NAV = [
-  { id: "upload", icon: "📥", label: "Data Source" },
-  { id: "dashboard", icon: "📊", label: "Overview" },
-  { id: "forecast", icon: "📈", label: "Trend Forecast" },
-  { id: "cluster", icon: "🧩", label: "Clustering" },
-  { id: "classify", icon: "🎯", label: "Classification" },
-  { id: "insights", icon: "💡", label: "Insights" },
+import {
+  Activity,
+  ChartNoAxesCombined,
+  Database,
+  Grid2X2,
+  Layers,
+  Network,
+  ScanLine,
+} from "lucide-react";
+export const NAV = [
+  { id: "source", label: "Data Source", Icon: Database },
+  { id: "overview", label: "Overview", Icon: Grid2X2 },
+  { id: "forecast", label: "Trend Forecast", Icon: ChartNoAxesCombined },
+  { id: "clustering", label: "Clustering", Icon: Network },
+  { id: "classification", label: "Classification", Icon: Layers },
+  { id: "insights", label: "Insights", Icon: ScanLine },
 ];
-
-export default function Sidebar({ active, onNavigate, hasData }) {
+export function Brand() {
   return (
-    <aside className="sidebar">
-      <div className="brand">
-        <div className="logo">◈</div>
-        <div>
-          <h1>AI Data Analyzer</h1>
-          <span>Predictive ML Studio</span>
-        </div>
-      </div>
-
-      <div className="nav-label">Workspace</div>
-      {NAV.map((n) => {
-        const disabled = !hasData && n.id !== "upload";
-        return (
-          <div
-            key={n.id}
-            className={`nav-item ${active === n.id ? "active" : ""}`}
-            style={disabled ? { opacity: 0.4, pointerEvents: "none" } : undefined}
-            onClick={() => onNavigate(n.id)}
+    <div className="brand">
+      <span className="brand-mark">
+        <img src="/project-icon-128.png" width="44" height="44" alt="" />
+      </span>
+      <span>AI Data Analyzer</span>
+    </div>
+  );
+}
+export default function Sidebar({
+  active,
+  onNavigate,
+  hasData,
+  mobile = false,
+}) {
+  return (
+    <aside
+      className={`sidebar ${mobile ? "mobile-sidebar" : "desktop-sidebar"}`}
+    >
+      <Brand />
+      <p className="nav-label">Workspace</p>
+      <nav aria-label={mobile ? "Mobile workspace" : "Workspace"}>
+        {NAV.map(({ id, label, Icon }) => (
+          <button
+            key={id}
+            className={`nav-item ${active === id ? "active" : ""}`}
+            aria-current={active === id ? "page" : undefined}
+            disabled={!hasData && id !== "source"}
+            onClick={() => onNavigate(id)}
           >
-            <span className="ico">{n.icon}</span>
-            {n.label}
-          </div>
-        );
-      })}
-
-      <div style={{ marginTop: "auto", padding: "14px 10px 0" }}>
-        <div
-          style={{
-            fontSize: 11,
-            color: "var(--text-faint)",
-            lineHeight: 1.5,
-            borderTop: "1px solid var(--border)",
-            paddingTop: 14,
-          }}
+            <Icon size={19} strokeWidth={1.6} />
+            <span>{label}</span>
+            <span className="nav-active-dot" />
+          </button>
+        ))}
+      </nav>
+      <div className="sidebar-note">
+        <a
+          href="https://rather-builds.vercel.app/"
+          target="_blank"
+          rel="noreferrer"
         >
-          <span className="live-dot" style={{ display: "inline-block", marginRight: 6 }} />
-          Models run locally on your machine. No data leaves this device.
-          <div style={{ marginTop: 8 }}>
-            Created by <b style={{ color: "var(--text-dim)" }}>RATHER_ADIL</b>
-            {" · "}
-            &copy; 2026 RATHER_ADIL
-            {" · "}10/07/2026
-          </div>
-        </div>
+          By Rather Builds <Activity size={14} />
+        </a>
+        <p>Temporary server session</p>
+        <small>Your dataset expires after 60 minutes of inactivity.</small>
       </div>
     </aside>
   );

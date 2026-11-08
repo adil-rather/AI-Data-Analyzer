@@ -11,3 +11,13 @@ frontend/dist/
 
 # Local env
 .env
+.env.*
+!.env.example
+.venv/
+.pytest_cache/
+**/.pytest_cache/
+.superpowers/
+.ruff_cache/
+frontend/coverage/
+frontend/test-results/
+frontend/playwright-report/

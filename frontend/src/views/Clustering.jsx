@@ -1,4 +1,5 @@
-import React, { useMemo, useState } from "react";
+import { useMemo } from "react";
+import { Play } from "lucide-react";
 import {
   CartesianGrid,
   ResponsiveContainer,
@@ -7,223 +8,225 @@ import {
   Tooltip,
   XAxis,
   YAxis,
-  ZAxis,
 } from "recharts";
-import { api } from "../api";
-import { Card, Field, Metric, Spinner } from "../components/ui";
-
-const PALETTE = ["#6c8bff", "#2ee6c5", "#b06cff", "#ff7eb6", "#fbbd23", "#36d399", "#ff9f43"];
-
+import {
+  AnalysisFeedback,
+  EmptyAnalysis,
+  Facts,
+  FeaturePicker,
+  Field,
+  ScopeNote,
+  Section,
+} from "../components/ui";
+import DataTable from "../components/DataTable";
+import {
+  axisStyle,
+  Legend,
+  PointTooltip,
+  useChartAnimation,
+} from "../components/charts";
+import { useAnalysis } from "../hooks/useAnalysis";
+import { COLORS, fmt, uniqueFieldKey } from "../lib";
 export default function Clustering({ profile, datasetId }) {
-  const numericCols = useMemo(
-    () => profile.stats.filter((s) => s.type === "numeric").map((s) => s.name),
-    [profile]
+  const numeric = profile.stats
+    .filter((s) => s.type === "numeric")
+    .map((s) => s.name);
+  const state = useAnalysis(
+      "clustering",
+      { features: numeric.slice(0, 4), clusters: 3 },
+      "cluster",
+      datasetId,
+    ),
+    { params, setParams, result } = state;
+  const animate = useChartAnimation(result);
+  const clusterKey = uniqueFieldKey(result?.features || [], "__cluster_label");
+  const groups = useMemo(
+    () =>
+      result
+        ? Array.from({ length: result.clusters }, (_, i) =>
+            result.points.filter((p) => p.cluster === i),
+          )
+        : [],
+    [result],
   );
-  const [features, setFeatures] = useState(numericCols.slice(0, 2));
-  const [clusters, setClusters] = useState(3);
-  const [result, setResult] = useState(null);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-
-  async function run() {
-    if (features.length < 2) {
-      setError("Select at least two features");
-      return;
-    }
-    setBusy(true);
-    setError("");
-    try {
-      const r = await api.cluster({ datasetId, features, clusters: Number(clusters) });
-      setResult(r);
-    } catch (e) {
-      setError(e.message);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  function toggleFeature(f) {
-    setFeatures((cur) =>
-      cur.includes(f) ? cur.filter((x) => x !== f) : cur.length < 4 ? [...cur, f] : cur
+  if (numeric.length < 2)
+    return (
+      <EmptyAnalysis title="Two numeric fields are needed.">
+        Clustering compares distances between observations. Try a table with at
+        least two numeric fields or load the customer segments sample.
+      </EmptyAnalysis>
     );
-  }
-
   return (
-    <div className="fade-in">
-      <div className="controls">
-        <Field label="Features (max 4)">
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            {numericCols.map((c) => (
-              <button
-                key={c}
-                onClick={() => toggleFeature(c)}
-                style={{
-                  padding: "7px 12px",
-                  borderRadius: 999,
-                  fontSize: 12.5,
-                  cursor: "pointer",
-                  border: "1px solid var(--border-strong)",
-                  background: features.includes(c) ? "var(--grad-soft)" : "transparent",
-                  color: features.includes(c) ? "var(--text)" : "var(--text-dim)",
-                  fontFamily: "inherit",
-                }}
-              >
-                {features.includes(c) ? "✓ " : ""}
-                {c}
-              </button>
-            ))}
-          </div>
-        </Field>
-        <Field label="Clusters (k)">
-          <input
-            type="number"
-            min="2"
-            max="8"
-            value={clusters}
-            onChange={(e) => setClusters(e.target.value)}
-            style={{ width: 90 }}
-          />
-        </Field>
-        <button className="btn primary" onClick={run} disabled={busy}>
-          {busy ? "Clustering…" : "🧩 Run K-Means"}
-        </button>
-      </div>
-
-      {error && (
-        <div
-          style={{
-            padding: "12px 16px",
-            borderRadius: 12,
-            background: "rgba(248,114,114,0.12)",
-            border: "1px solid rgba(248,114,114,0.3)",
-            color: "#ffb0b0",
-            fontSize: 13,
-            marginBottom: 16,
-          }}
+    <>
+      <FeaturePicker
+        columns={numeric}
+        selected={params.features}
+        onChange={(features) => setParams({ features })}
+      />
+      <form className="model-controls" onSubmit={state.run}>
+        <Field
+          label="Number of clusters (K)"
+          hint="2–10 groups; fewer than complete rows"
         >
-          ⚠️ {error}
-        </div>
-      )}
-      {busy && <Spinner label="Segmenting data with K-Means…" />}
-
-      {result && !busy && (
-        <>
-          <div className="metric-row">
-            <Metric k="Clusters" v={result.clusters} />
-            <Metric k="Silhouette" v={result.silhouette.toFixed(3)} />
-            <Metric k="Points" v={result.points.length.toLocaleString()} />
-            <Metric
-              k="Largest Segment"
-              v={`${Math.max(...Object.values(result.sizes))} pts`}
+          {(id) => (
+            <input
+              id={id}
+              type="number"
+              required
+              min={2}
+              max={10}
+              value={params.clusters}
+              onChange={(e) => setParams({ clusters: e.target.value })}
             />
-          </div>
-
-          <div className="grid grid-3">
-            <Card
-              title="Cluster Map"
-              sub="PCA projection of your selected features"
-              className="slide-in"
-              style={{ gridColumn: "span 2" }}
-            >
-              <ResponsiveContainer width="100%" height={380}>
-                <ScatterChart margin={{ top: 10, right: 20, bottom: 10, left: 0 }}>
-                  <CartesianGrid stroke="rgba(120,140,200,0.1)" />
-                  <XAxis type="number" stroke="#5e688a" fontSize={11} name="PC1" />
-                  <YAxis type="number" stroke="#5e688a" fontSize={11} name="PC2" />
-                  <ZAxis range={[40, 40]} />
+          )}
+        </Field>
+        <button
+          className="button"
+          disabled={
+            state.busy ||
+            params.features.length < 2 ||
+            params.features.length > 20
+          }
+        >
+          <Play size={15} />
+          {state.busy ? "Finding groups…" : "Find clusters"}
+        </button>
+      </form>
+      <p className="quiet-note">
+        Select 2–20 numeric features. Features are standardized before K-Means;
+        a fixed random seed makes runs repeatable.
+      </p>
+      <AnalysisFeedback state={state} />
+      {result ? (
+        <div className="model-results">
+          <ScopeNote result={result} />
+          <Facts
+            items={[
+              ["Clusters", result.clusters],
+              ["Complete rows", fmt(result.rowsUsed, 0)],
+              ["Silhouette", fmt(result.silhouette, 3)],
+              ["Points plotted", fmt(result.points.length, 0)],
+            ]}
+          />
+          <Section
+            title="The shape of your segments"
+            description={
+              result.projection === "PCA components"
+                ? "PCA components 1 and 2 · reduced from the selected features"
+                : `Standardized ${result.features[0]} and ${result.features[1]}`
+            }
+            className="chart-surface"
+          >
+            <div className="chart-box tall">
+              <ResponsiveContainer width="100%" height="100%">
+                <ScatterChart
+                  margin={{ top: 15, right: 12, bottom: 18, left: -12 }}
+                >
+                  <CartesianGrid stroke="#e1e6dc" />
+                  <XAxis
+                    dataKey="x"
+                    type="number"
+                    name={
+                      result.projection === "PCA components"
+                        ? "PC1"
+                        : result.features[0]
+                    }
+                    tick={axisStyle}
+                    tickLine={false}
+                    axisLine={{ stroke: "#c3cdbb" }}
+                  />
+                  <YAxis
+                    dataKey="y"
+                    type="number"
+                    name={
+                      result.projection === "PCA components"
+                        ? "PC2"
+                        : result.features[1]
+                    }
+                    tick={axisStyle}
+                    tickLine={false}
+                    axisLine={false}
+                    width={55}
+                  />
                   <Tooltip
                     cursor={{ strokeDasharray: "3 3" }}
-                    wrapperClassName="chart-tooltip"
-                    content={<ClusterTip features={result.features} />}
+                    content={<PointTooltip />}
                   />
-                  {Object.keys(result.sizes).map((c) => (
+                  {groups.map((points, i) => (
                     <Scatter
-                      key={c}
-                      name={`Cluster ${c}`}
-                      data={result.points.filter((p) => String(p.cluster) === c)}
-                      fill={PALETTE[c % PALETTE.length]}
-                      fillOpacity={0.75}
-                      className="cluster-dot"
+                      key={i}
+                      name={`Cluster ${i + 1}`}
+                      data={points}
+                      fill={COLORS[i]}
+                      fillOpacity={0.7}
+                      isAnimationActive={animate}
+                      animationDuration={400}
                     />
                   ))}
                 </ScatterChart>
               </ResponsiveContainer>
-              <div className="legend">
-                {Object.keys(result.sizes).map((c) => (
-                  <span key={c}>
-                    <span
-                      className="swatch"
-                      style={{ background: PALETTE[c % PALETTE.length] }}
-                    />
-                    Cluster {c} · {result.sizes[c]} pts
-                  </span>
-                ))}
-              </div>
-            </Card>
-
-            <Card title="Segment Centroids" sub="Mean feature values per cluster">
-              <div className="table-wrap" style={{ maxHeight: 320 }}>
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Cluster</th>
-                      {result.features.map((f) => (
-                        <th key={f}>{f}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {result.centroids.map((cen, i) => (
-                      <tr key={i}>
-                        <td>
-                          <span
-                            className="swatch"
-                            style={{
-                              background: PALETTE[i % PALETTE.length],
-                              display: "inline-block",
-                              width: 10,
-                              height: 10,
-                              borderRadius: 3,
-                              marginRight: 6,
-                            }}
-                          />
-                          {i}
-                        </td>
-                        {result.features.map((f) => (
-                          <td key={f}>{cen[f]?.toFixed ? cen[f].toFixed(1) : cen[f]}</td>
-                        ))}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </Card>
+            </div>
+            <Legend
+              items={groups.map((_, i) => ({
+                label: `Cluster ${i + 1} · ${fmt(result.sizes[String(i)], 0)} rows`,
+                color: COLORS[i],
+              }))}
+            />
+            <p className="quiet-note">
+              Plot axes are transformed units, not the original measurements. Up
+              to 2,000 points are displayed; all complete analysis rows
+              contribute to the model.
+            </p>
+          </Section>
+          <div className="model-notes-grid">
+            <section>
+              <h2>Read the result</h2>
+              <p>
+                Silhouette ranges from −1 to 1. Higher values suggest better
+                separation under this choice of features and K; the score alone
+                does not prove that groups are meaningful.
+              </p>
+              <p>
+                The score uses up to {fmt(result.silhouetteSample, 0)} sampled
+                points. Cluster numbers are labels, not a ranking. Test several
+                values of K and check whether the groups make sense for your
+                question.
+              </p>
+            </section>
+            <Section
+              title="Centroids in original units"
+              description="Average feature position of each cluster."
+            >
+              <DataTable
+                label="Cluster centroids"
+                columns={[
+                  {
+                    key: clusterKey,
+                    label: "Cluster",
+                    render: (v) => (
+                      <span className="cluster-key">
+                        <i style={{ background: COLORS[v] }} />
+                        Cluster {v + 1}
+                      </span>
+                    ),
+                  },
+                  ...result.features.map((key) => ({ key, type: "numeric" })),
+                ]}
+                rows={result.centroids.map((c, i) => ({
+                  ...c,
+                  [clusterKey]: i,
+                }))}
+              />
+            </Section>
           </div>
-        </>
-      )}
-
-      {!result && !busy && (
-        <Card>
-          <div style={{ color: "var(--text-dim)", fontSize: 13, textAlign: "center", padding: 30 }}>
-            Choose numeric features and run K-Means to discover natural groupings.
-          </div>
-        </Card>
-      )}
-    </div>
-  );
-}
-
-function ClusterTip({ active, payload, features }) {
-  if (!active || !payload || !payload.length) return null;
-  const p = payload[0].payload;
-  return (
-    <div className="chart-tooltip">
-      <div style={{ fontWeight: 700, marginBottom: 4 }}>Cluster {p.cluster}</div>
-      {features.map((f) => (
-        <div key={f}>
-          {f}: <b>{p[f]?.toFixed ? p[f].toFixed(2) : p[f]}</b>
         </div>
-      ))}
-    </div>
+      ) : (
+        <EmptyAnalysis>
+          Choose meaningful features and a starting number of groups. The result
+          shows a colored projection, group sizes and centroids in the original
+          units.
+        </EmptyAnalysis>
+      )}
+    </>
   );
 }

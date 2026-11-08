@@ -1,220 +1,260 @@
-import React, { useMemo, useState } from "react";
-import { api } from "../api";
-import { Card, Field, Metric, Spinner } from "../components/ui";
-
+import { useMemo } from "react";
+import { Play } from "lucide-react";
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
+import {
+  AnalysisFeedback,
+  EmptyAnalysis,
+  Facts,
+  FeaturePicker,
+  Field,
+  ScopeNote,
+  Section,
+} from "../components/ui";
+import { axisStyle, useChartAnimation } from "../components/charts";
+import DataTable from "../components/DataTable";
+import { useAnalysis } from "../hooks/useAnalysis";
+import { COLORS, fmt, percentage } from "../lib";
 export default function Classification({ profile, datasetId }) {
-  const numericCols = useMemo(
-    () => profile.stats.filter((s) => s.type === "numeric").map((s) => s.name),
-    [profile]
+  const numeric = profile.stats
+      .filter((s) => s.type === "numeric")
+      .map((s) => s.name),
+    targets = profile.stats
+      .filter((s) => s.unique >= 2 && s.unique <= 20)
+      .map((s) => s.name);
+  const first = targets.find((c) => !numeric.includes(c)) || targets[0] || "";
+  const state = useAnalysis(
+      "classification",
+      {
+        target: first,
+        features: numeric.filter((c) => c !== first).slice(0, 8),
+        testSize: 0.25,
+      },
+      "classify",
+      datasetId,
+    ),
+    { params, setParams, result } = state;
+  const animate = useChartAnimation(result);
+  const matrix = useMemo(
+    () =>
+      result
+        ? result.confusionMatrix.map((row, i) =>
+            Object.fromEntries([
+              ["actual", result.classes[i]],
+              ...row.map((n, j) => [`prediction_${j}`, n]),
+            ]),
+          )
+        : [],
+    [result],
   );
-  const catCols = useMemo(
-    () => profile.stats.filter((s) => s.type !== "numeric").map((s) => s.name),
-    [profile]
-  );
-  const [features, setFeatures] = useState(numericCols);
-  const [target, setTarget] = useState(catCols[catCols.length - 1] || "");
-  const [result, setResult] = useState(null);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-
-  async function run() {
-    if (!target) {
-      setError("Pick a categorical target");
-      return;
-    }
-    setBusy(true);
-    setError("");
-    try {
-      const r = await api.classify({ datasetId, features, target });
-      setResult(r);
-    } catch (e) {
-      setError(e.message);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  function toggleFeature(f) {
-    setFeatures((cur) => (cur.includes(f) ? cur.filter((x) => x !== f) : [...cur, f]));
-  }
-
+  if (!targets.length || !numeric.length)
+    return (
+      <EmptyAnalysis title="A category and numeric predictors are needed.">
+        Use a target with 2–20 classes and at least one separate numeric input.
+        The customer segments sample is a useful starting point.
+      </EmptyAnalysis>
+    );
   return (
-    <div className="fade-in">
-      <div className="controls">
-        <Field label="Target (what to predict)">
-          <select value={target} onChange={(e) => setTarget(e.target.value)}>
-            <option value="">— select —</option>
-            {catCols.map((c) => (
-              <option key={c} value={c}>
-                {c}
-              </option>
-            ))}
-            {numericCols.map((c) => (
-              <option key={c} value={c} style={{ color: "#5e688a" }}>
-                {c} (numeric)
-              </option>
-            ))}
-          </select>
+    <>
+      <form className="model-controls" onSubmit={state.run}>
+        <Field label="Target category">
+          {(id) => (
+            <select
+              id={id}
+              value={params.target}
+              onChange={(e) =>
+                setParams({
+                  target: e.target.value,
+                  features: params.features.filter((c) => c !== e.target.value),
+                })
+              }
+            >
+              {targets.map((c) => (
+                <option key={c}>{c}</option>
+              ))}
+            </select>
+          )}
         </Field>
-        <Field label="Features">
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", maxWidth: 620 }}>
-            {numericCols.map((c) => (
-              <button
-                key={c}
-                onClick={() => toggleFeature(c)}
-                style={{
-                  padding: "7px 12px",
-                  borderRadius: 999,
-                  fontSize: 12.5,
-                  cursor: "pointer",
-                  border: "1px solid var(--border-strong)",
-                  background: features.includes(c) ? "var(--grad-soft)" : "transparent",
-                  color: features.includes(c) ? "var(--text)" : "var(--text-dim)",
-                  fontFamily: "inherit",
-                }}
-              >
-                {features.includes(c) ? "✓ " : ""}
-                {c}
-              </button>
-            ))}
-          </div>
+        <Field label="Holdout size">
+          {(id) => (
+            <select
+              id={id}
+              value={params.testSize}
+              onChange={(e) => setParams({ testSize: Number(e.target.value) })}
+            >
+              {[0.1, 0.2, 0.25, 0.3, 0.4].map((v) => (
+                <option key={v} value={v}>
+                  {v * 100}% test / {100 - v * 100}% train
+                </option>
+              ))}
+            </select>
+          )}
         </Field>
-        <button className="btn primary" onClick={run} disabled={busy}>
-          {busy ? "Training…" : "🎯 Train Model"}
-        </button>
-      </div>
-
-      {error && (
-        <div
-          style={{
-            padding: "12px 16px",
-            borderRadius: 12,
-            background: "rgba(248,114,114,0.12)",
-            border: "1px solid rgba(248,114,114,0.3)",
-            color: "#ffb0b0",
-            fontSize: 13,
-            marginBottom: 16,
-          }}
+        <button
+          className="button"
+          disabled={
+            state.busy || !params.features.length || params.features.length > 20
+          }
         >
-          ⚠️ {error}
-        </div>
-      )}
-      {busy && <Spinner label="Training RandomForest classifier…" />}
-
-      {result && !busy && (
-        <>
-          <div className="metric-row">
-            <Metric k="Accuracy" v={(result.accuracy * 100).toFixed(1) + "%"} />
-            <Metric k="Precision" v={(result.precision * 100).toFixed(1) + "%"} />
-            <Metric k="Recall" v={(result.recall * 100).toFixed(1) + "%"} />
-            <Metric k="F1 Score" v={(result.f1 * 100).toFixed(1) + "%"} />
-            <Metric k="Test Set" v={result.testSize} />
-          </div>
-
-          <div className="grid grid-2">
-            <Card title="Confusion Matrix" sub={`Predicted vs actual · classes = ${result.classes.length}`}>
-              <ConfusionMatrix
-                matrix={result.confusionMatrix}
-                classes={result.classes}
-              />
-            </Card>
-
-            <Card title="Feature Importance" sub="What drove the predictions">
-              <div style={{ display: "flex", flexDirection: "column", gap: 12, marginTop: 6 }}>
-                {result.featureImportances.map((fi) => (
-                  <div key={fi.feature}>
-                    <div
-                      style={{
-                        display: "flex",
-                        justifyContent: "space-between",
-                        fontSize: 12.5,
-                        marginBottom: 4,
-                        color: "var(--text-dim)",
-                      }}
-                    >
-                      <span>{fi.feature}</span>
-                      <span style={{ color: "var(--text)" }}>{(fi.importance * 100).toFixed(1)}%</span>
-                    </div>
-                    <div className="bar-track">
-                      <div
-                        className="bar-fill"
-                        style={{ width: `${Math.max(2, fi.importance * 100)}%` }}
+          <Play size={15} />
+          {state.busy ? "Training model…" : "Train classifier"}
+        </button>
+      </form>
+      <FeaturePicker
+        columns={numeric}
+        exclude={params.target}
+        selected={params.features}
+        onChange={(features) => setParams({ features })}
+      />
+      <p className="quiet-note">
+        Random Forest · 100 trees · stratified holdout · seed 42. The target is
+        excluded from predictor choices to prevent direct answer leakage.
+      </p>
+      <AnalysisFeedback state={state} />
+      {result ? (
+        <div className="model-results">
+          <ScopeNote result={result} />
+          <Facts
+            items={[
+              ["Holdout accuracy", percentage(result.accuracy)],
+              ["Weighted precision", percentage(result.precision)],
+              ["Weighted recall", percentage(result.recall)],
+              ["Weighted F1", percentage(result.f1)],
+            ]}
+          />
+          <Section
+            title="What the model used"
+            description={`Predictors ranked by impurity-based importance · ${fmt(result.trainSize, 0)} training rows · ${fmt(result.testSize, 0)} test rows`}
+            className="chart-surface"
+          >
+            <div
+              className="chart-box"
+              style={{
+                height: Math.max(
+                  240,
+                  Math.min(620, result.featureImportances.length * 34 + 55),
+                ),
+              }}
+            >
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart
+                  data={result.featureImportances}
+                  layout="vertical"
+                  margin={{ top: 8, right: 25, bottom: 15, left: 0 }}
+                >
+                  <CartesianGrid horizontal={false} stroke="#e1e6dc" />
+                  <XAxis
+                    type="number"
+                    domain={[0, "dataMax"]}
+                    tickFormatter={(v) => `${Math.round(v * 100)}%`}
+                    tick={axisStyle}
+                    tickLine={false}
+                    axisLine={false}
+                  />
+                  <YAxis
+                    type="category"
+                    dataKey="feature"
+                    tick={axisStyle}
+                    tickLine={false}
+                    axisLine={false}
+                    width={120}
+                    tickFormatter={(v) =>
+                      v.length > 17 ? v.slice(0, 16) + "…" : v
+                    }
+                  />
+                  <Tooltip
+                    cursor={{ fill: "#e7eddf" }}
+                    formatter={(v) => percentage(v)}
+                    contentStyle={{
+                      background: "#fcfcf9",
+                      border: "1px solid #bdc8b9",
+                      fontSize: 12,
+                    }}
+                  />
+                  <Bar
+                    dataKey="importance"
+                    name="Importance"
+                    barSize={17}
+                    radius={[0, 3, 3, 0]}
+                    isAnimationActive={animate}
+                    animationDuration={450}
+                  >
+                    {result.featureImportances.map((p) => (
+                      <Cell
+                        key={p.feature}
+                        fill={
+                          COLORS[
+                            result.features.indexOf(p.feature) % COLORS.length
+                          ]
+                        }
                       />
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </Card>
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+            <p className="quiet-note">
+              Importance shows how this fitted model used the chosen predictors.
+              It is not causal evidence and can favor high-cardinality
+              variables.
+            </p>
+          </Section>
+          <div className="model-notes-grid">
+            <section>
+              <h2>Evaluate with context</h2>
+              <p>
+                The model predicts <strong>{result.target}</strong> across{" "}
+                {result.classes.length} classes. Scores above describe one
+                reproducible held-out split of the analysis data, not a
+                guarantee on new populations.
+              </p>
+              <p>
+                For an imbalanced target, look beyond accuracy: compare
+                precision, recall and the confusion matrix. Rows are actual
+                labels; columns are predicted labels. Diagonal cells are correct
+                predictions.
+              </p>
+              <p>
+                Feature selection still needs domain judgment. Remove fields
+                that would be unavailable at prediction time, identifiers and
+                indirect copies of the target. This baseline is not
+                cross-validation.
+              </p>
+            </section>
+            <Section
+              title="Confusion matrix"
+              description="Actual class by predicted class."
+            >
+              <DataTable
+                label="Confusion matrix"
+                columns={[
+                  { key: "actual", label: "Actual ↓ / Predicted →" },
+                  ...result.classes.map((c, i) => ({
+                    key: `prediction_${i}`,
+                    label: c,
+                    type: "numeric",
+                  })),
+                ]}
+                rows={matrix}
+              />
+            </Section>
           </div>
-        </>
+        </div>
+      ) : (
+        <EmptyAnalysis>
+          Choose a target, select the predictors available at prediction time,
+          then train a baseline. The app will validate class sizes before
+          splitting the data.
+        </EmptyAnalysis>
       )}
-
-      {!result && !busy && (
-        <Card>
-          <div style={{ color: "var(--text-dim)", fontSize: 13, textAlign: "center", padding: 30 }}>
-            Select a categorical target and train a RandomForest to predict labels.
-          </div>
-        </Card>
-      )}
-    </div>
-  );
-}
-
-function ConfusionMatrix({ matrix, classes }) {
-  const max = Math.max(...matrix.flat(), 1);
-  return (
-    <div style={{ overflowX: "auto" }}>
-      <table style={{ minWidth: 260 }}>
-        <thead>
-          <tr>
-            <th></th>
-            {classes.map((c, i) => (
-              <th key={i} style={{ textAlign: "center" }}>
-                P{c}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {matrix.map((row, i) => (
-            <tr key={i}>
-              <th style={{ color: "var(--text-dim)" }}>A{classes[i]}</th>
-              {row.map((v, j) => {
-                const isDiag = i === j;
-                const op = 0.15 + (v / max) * 0.7;
-                return (
-                  <td key={j} style={{ textAlign: "center", padding: 6 }}>
-                    <div
-                      style={{
-                        background: isDiag
-                          ? `rgba(54,211,153,${op})`
-                          : `rgba(248,114,114,${op})`,
-                        borderRadius: 8,
-                        padding: "10px 0",
-                        fontWeight: 700,
-                        fontSize: 13,
-                        color: "#fff",
-                      }}
-                    >
-                      {v}
-                    </div>
-                  </td>
-                );
-              })}
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      <div className="legend" style={{ marginTop: 14 }}>
-        <span>
-          <span className="swatch" style={{ background: "rgba(54,211,153,0.6)" }} />
-          Correct (diagonal)
-        </span>
-        <span>
-          <span className="swatch" style={{ background: "rgba(248,114,114,0.6)" }} />
-          Misclassified
-        </span>
-      </div>
-    </div>
+    </>
   );
 }

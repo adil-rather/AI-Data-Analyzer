@@ -1,116 +1,256 @@
-import React, { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import {
+  Activity,
+  ArrowRight,
+  ChartNoAxesColumn,
+  FileSpreadsheet,
+  Info,
+  ShoppingCart,
+  Users,
+} from "lucide-react";
 import { api } from "../api";
-import { Card, Spinner } from "../components/ui";
-
-export default function Upload({ onLoaded }) {
-  const [samples, setSamples] = useState([]);
-  const [busy, setBusy] = useState(false);
-  const [drag, setDrag] = useState(false);
-  const [error, setError] = useState("");
-  const inputRef = useRef();
-
+import { Loading, Notice, Section } from "../components/ui";
+import { fmt } from "../lib";
+const icons = {
+  retail_sales: ShoppingCart,
+  customer_segments: Users,
+  sensor_telemetry: Activity,
+  stock_prices: ChartNoAxesColumn,
+};
+export default function Upload({ onLoaded, hasData, onReturn }) {
+  const [samples, setSamples] = useState([]),
+    [sampleError, setSampleError] = useState(""),
+    [retry, setRetry] = useState(0),
+    [loadingSamples, setLoadingSamples] = useState(true),
+    [busy, setBusy] = useState(""),
+    [progress, setProgress] = useState(null),
+    [drag, setDrag] = useState(false),
+    [error, setError] = useState("");
+  const input = useRef(null),
+    controller = useRef(null),
+    alive = useRef(true);
   useEffect(() => {
-    api.samples().then(setSamples).catch(() => {});
+    alive.current = true;
+    return () => {
+      alive.current = false;
+      controller.current?.abort();
+    };
   }, []);
-
-  async function handleFile(file) {
+  useEffect(() => {
+    const abort = new AbortController();
+    setLoadingSamples(true);
+    setSampleError("");
+    api
+      .samples({ signal: abort.signal })
+      .then(setSamples)
+      .catch((e) => {
+        if (e.name !== "AbortError") setSampleError(e.message);
+      })
+      .finally(() => {
+        if (!abort.signal.aborted) setLoadingSamples(false);
+      });
+    return () => abort.abort();
+  }, [retry]);
+  async function run(task, label) {
+    if (busy) return;
+    controller.current?.abort();
+    const current = new AbortController();
+    controller.current = current;
+    setBusy(label);
+    setError("");
+    try {
+      const data = await task(current.signal);
+      if (alive.current && !current.signal.aborted) onLoaded(data);
+    } catch (e) {
+      if (alive.current && e.name !== "AbortError") setError(e.message);
+    } finally {
+      if (alive.current) {
+        setBusy("");
+        setProgress(null);
+      }
+    }
+  }
+  function upload(file) {
     if (!file) return;
-    setBusy(true);
-    setError("");
-    try {
-      const data = await api.uploadFile(file);
-      onLoaded(data, file.name);
-    } catch (e) {
-      setError(e.message);
-    } finally {
-      setBusy(false);
+    if (!/\.(csv|xlsx)$/i.test(file.name)) {
+      setError(
+        "Choose a UTF-8 CSV or .xlsx file. Other file types are not accepted.",
+      );
+      return;
     }
+    setProgress(0);
+    run(
+      (signal) => api.uploadFile(file, { signal, onProgress: setProgress }),
+      `Uploading ${file.name}`,
+    );
   }
-
-  async function loadSample(name) {
-    setBusy(true);
-    setError("");
-    try {
-      const data = await api.loadSample(name);
-      onLoaded(data, name.replace(/_/g, " "));
-    } catch (e) {
-      setError(e.message);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  if (busy) return <Spinner label="Analyzing dataset…" />;
-
   return (
-    <div className="fade-in">
+    <>
       <div
-        className={`dropzone ${drag ? "drag" : ""}`}
-        onClick={() => inputRef.current?.click()}
+        className={`dropzone ${drag ? "dragging" : ""} ${busy ? "is-busy" : ""}`}
         onDragOver={(e) => {
           e.preventDefault();
-          setDrag(true);
+          if (!busy) setDrag(true);
         }}
         onDragLeave={() => setDrag(false)}
         onDrop={(e) => {
           e.preventDefault();
           setDrag(false);
-          handleFile(e.dataTransfer.files[0]);
+          if (!busy) upload(e.dataTransfer.files[0]);
         }}
       >
-        <div className="big">☁️</div>
-        <h3>Drop a CSV or Excel file here</h3>
-        <p style={{ color: "var(--text-dim)", fontSize: 13 }}>
-          or click to browse — your data is processed locally
-        </p>
+        <FileSpreadsheet size={48} strokeWidth={1.2} aria-hidden="true" />
+        <h2>
+          {busy
+            ? progress === 100
+              ? "Profiling your complete dataset…"
+              : busy
+            : "Drop a CSV or Excel file here"}
+        </h2>
+        {busy ? (
+          <>
+            <Loading
+              label={
+                progress === null
+                  ? "Preparing your sample…"
+                  : progress < 100
+                    ? `Uploading · ${progress}%`
+                    : "Upload complete. Reading and profiling every row…"
+              }
+            />
+            {progress !== null && (
+              <progress
+                value={progress}
+                max={100}
+                aria-label="Upload progress"
+              />
+            )}
+            <button
+              className="button secondary"
+              onClick={() => {
+                controller.current?.abort();
+                setBusy("");
+                setProgress(null);
+              }}
+            >
+              Cancel request
+            </button>
+          </>
+        ) : (
+          <button className="button" onClick={() => input.current?.click()}>
+            Choose file
+          </button>
+        )}
+        <p>UTF-8 CSV or .xlsx · large CSVs supported · values-only tables</p>
         <input
-          ref={inputRef}
+          ref={input}
           type="file"
-          accept=".csv,.xlsx,.xls"
-          hidden
-          onChange={(e) => handleFile(e.target.files[0])}
+          accept=".csv,.xlsx"
+          aria-label="Upload a dataset"
+          className="sr-only"
+          onChange={(e) => {
+            upload(e.target.files[0]);
+            e.target.value = "";
+          }}
+          disabled={!!busy}
         />
       </div>
-
-      {error && (
-        <div
-          style={{
-            marginTop: 16,
-            padding: "12px 16px",
-            borderRadius: 12,
-            background: "rgba(248,114,114,0.12)",
-            border: "1px solid rgba(248,114,114,0.3)",
-            color: "#ffb0b0",
-            fontSize: 13,
-          }}
-        >
-          ⚠️ {error}
-        </div>
-      )}
-
-      <div style={{ marginTop: 34, marginBottom: 4 }}>
-        <h3 style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 18 }}>
-          Or start with a sample dataset
-        </h3>
-        <p style={{ color: "var(--text-dim)", fontSize: 13, marginTop: 4 }}>
-          Realistic synthetic data so you can explore every feature instantly.
+      {error && <Notice kind="error">{error}</Notice>}
+      <div className="upload-guidance">
+        <Info size={19} />
+        <p>
+          Files are processed on this server, not only in your browser. The full
+          dataset stays in temporary storage and expires after 60 minutes of
+          inactivity. Large-file models use labeled samples. Avoid personal or
+          sensitive data.
         </p>
       </div>
-
-      <div className="sample-grid">
-        {samples.map((s) => (
-          <div key={s.id} className="sample slide-in" onClick={() => loadSample(s.id)}>
-            <h4>
-              {s.id === "retail_sales" && "🛍️ "}
-              {s.id === "customer_segments" && "👥 "}
-              {s.id === "sensor_telemetry" && "📡 "}
-              {s.id === "stock_prices" && "💹 "}
-              {s.name}
-            </h4>
-            <p>{s.description}</p>
+      <details className="upload-safety">
+        <summary>Supported data & safe uploads</summary>
+        <p>
+          CSV is recommended for million-row tables. No low file-size or row cap
+          is imposed by this app; available server storage and hosting request
+          limits still apply. Use up to 100 uniquely named columns and text
+          cells up to 8,192 characters. Macros, formulas, embedded objects and
+          external workbook connections are rejected. Files are never executed.
+          Large Excel workbooks may need conversion to CSV.
+        </p>
+      </details>
+      {hasData && (
+        <p className="return-link">
+          <button className="text-button" onClick={onReturn}>
+            Return to current dataset ↗
+          </button>{" "}
+          A failed upload keeps the current table.
+        </p>
+      )}
+      <Section
+        title="Explore without an upload"
+        description="Four reproducible synthetic datasets, ready to analyze."
+        className="sample-section"
+      >
+        {loadingSamples ? (
+          <Loading label="Loading sample datasets…" />
+        ) : sampleError ? (
+          <Notice kind="error" onRetry={() => setRetry((x) => x + 1)}>
+            {sampleError}
+          </Notice>
+        ) : (
+          <div className="sample-list">
+            {samples.map((sample) => {
+              const Icon = icons[sample.id] || FileSpreadsheet;
+              return (
+                <div className="sample-row" key={sample.id}>
+                  <Icon className="sample-icon" size={31} strokeWidth={1.4} />
+                  <div className="sample-copy">
+                    <h3>{sample.name}</h3>
+                    <p>{sample.description}</p>
+                  </div>
+                  <div className="sample-size">
+                    <span>
+                      {fmt(
+                        sample.rows ||
+                          {
+                            retail_sales: 730,
+                            customer_segments: 600,
+                            sensor_telemetry: 1000,
+                            stock_prices: 500,
+                          }[sample.id],
+                        0,
+                      )}{" "}
+                      rows
+                    </span>
+                    <span>
+                      {sample.columns ||
+                        { sensor_telemetry: 4 }[sample.id] ||
+                        6}{" "}
+                      columns
+                    </span>
+                  </div>
+                  <button
+                    className="button secondary"
+                    aria-label={`Load ${sample.name} sample`}
+                    disabled={!!busy}
+                    onClick={() => {
+                      setProgress(null);
+                      run(
+                        (signal) => api.loadSample(sample.id, { signal }),
+                        `Loading ${sample.name}…`,
+                      );
+                    }}
+                  >
+                    Load sample <ArrowRight size={18} />
+                  </button>
+                </div>
+              );
+            })}
           </div>
-        ))}
-      </div>
-    </div>
+        )}
+        <p className="quiet-note">
+          The stock dataset is simulated. These sample results do not describe
+          real people or businesses.
+        </p>
+      </Section>
+    </>
   );
 }

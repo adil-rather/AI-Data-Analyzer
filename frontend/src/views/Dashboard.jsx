@@ -1,146 +1,258 @@
-import React from "react";
-import { Card, Pill, StatTile } from "../components/ui";
-
-export default function Dashboard({ profile }) {
-  if (!profile) return null;
-  const numericCols = profile.stats.filter((s) => s.type === "numeric");
-  const catCols = profile.stats.filter((s) => s.type === "categorical");
-  const totalMissing = profile.stats.reduce((a, s) => a + (s.missing || 0), 0);
-  const completeness =
-    profile.rows * profile.columns.length > 0
-      ? (
-          100 -
-          (totalMissing / (profile.rows * profile.columns.length)) * 100
-        ).toFixed(1)
-      : "100";
-
+import { useState } from "react";
+import { ArrowLink, Facts, Section } from "../components/ui";
+import DataTable from "../components/DataTable";
+import { COLORS, fmt, uniqueFieldKey } from "../lib";
+export default function Dashboard({ profile, onNavigate }) {
+  const [tab, setTab] = useState("preview"),
+    [selected, setSelected] = useState(
+      profile.stats.find((s) => s.type === "numeric")?.name ||
+        profile.columns[0],
+    );
+  const stat = profile.stats.find((s) => s.name === selected);
+  const rowKey = uniqueFieldKey(profile.columns, "__displayRow");
+  const preview = profile.preview.map((row, i) => ({
+    ...row,
+    [rowKey]: i + 1,
+  }));
   return (
-    <div className="fade-in">
-      <div className="grid grid-4" style={{ marginBottom: 18 }}>
-        <StatTile icon="📦" label="Total Rows" value={profile.rows.toLocaleString()} />
-        <StatTile icon="🧱" label="Columns" value={profile.columns.length} />
-        <StatTile
-          icon="🔢"
-          label="Numeric Features"
-          value={numericCols.length}
-          delta={`${catCols.length} categorical`}
-        />
-        <StatTile
-          icon="✨"
-          label="Data Completeness"
-          value={`${completeness}%`}
-          delta={totalMissing > 0 ? `${totalMissing} missing` : "no gaps"}
-          deltaDir={totalMissing > 0 ? "down" : "up"}
-        />
-      </div>
-
-      <div className="grid grid-2" style={{ marginBottom: 18 }}>
-        <Card title="Column Profile" sub="Detected types & key statistics">
-          <div className="table-wrap" style={{ maxHeight: 340 }}>
-            <table>
-              <thead>
-                <tr>
-                  <th>Column</th>
-                  <th>Type</th>
-                  <th>Mean / Top</th>
-                  <th>Range / Unique</th>
-                  <th>Missing</th>
-                </tr>
-              </thead>
-              <tbody>
-                {profile.stats.map((s) => (
-                  <tr key={s.name}>
-                    <td style={{ fontWeight: 600 }}>{s.name}</td>
-                    <td>
-                      <Pill type={s.type}>{s.type}</Pill>
-                    </td>
-                    <td>
-                      {s.type === "numeric"
-                        ? s.mean?.toLocaleString()
-                        : s.top?.[0]
-                        ? `${s.top[0].value} (${s.top[0].count})`
-                        : "—"}
-                    </td>
-                    <td>
-                      {s.type === "numeric"
-                        ? `${s.min?.toLocaleString()} – ${s.max?.toLocaleString()}`
-                        : `${s.unique ?? "—"} unique`}
-                    </td>
-                    <td style={{ color: s.missing ? "var(--warn)" : "var(--text-faint)" }}>
-                      {s.missing || 0}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+    <>
+      <Facts
+        items={[
+          ["Rows", fmt(profile.rows, 0)],
+          ["Columns", profile.columns.length],
+          [
+            "Missing cells",
+            fmt(
+              profile.missingCells ??
+                profile.stats.reduce((n, s) => n + s.missing, 0),
+              0,
+            ),
+          ],
+          [
+            "Numeric fields",
+            profile.stats.filter((s) => s.type === "numeric").length,
+          ],
+        ]}
+      />
+      <div className="overview-grid">
+        <Section title="Dataset preview">
+          <div
+            className="tabs"
+            role="tablist"
+            aria-label="Dataset view"
+            onKeyDown={(event) => {
+              if (
+                !["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)
+              )
+                return;
+              event.preventDefault();
+              const next =
+                event.key === "Home"
+                  ? "preview"
+                  : event.key === "End"
+                    ? "profiles"
+                    : tab === "preview"
+                      ? "profiles"
+                      : "preview";
+              setTab(next);
+              event.currentTarget
+                .querySelector(`[data-tab="${next}"]`)
+                ?.focus();
+            }}
+          >
+            <button
+              role="tab"
+              data-tab="preview"
+              tabIndex={tab === "preview" ? 0 : -1}
+              aria-selected={tab === "preview"}
+              onClick={() => setTab("preview")}
+            >
+              Data preview
+            </button>
+            <button
+              role="tab"
+              data-tab="profiles"
+              tabIndex={tab === "profiles" ? 0 : -1}
+              aria-selected={tab === "profiles"}
+              onClick={() => setTab("profiles")}
+            >
+              Column profiles
+            </button>
           </div>
-        </Card>
-
-        <Card title="Distribution Snapshot" sub="Top categories across categorical fields">
-          {catCols.length === 0 && (
-            <div style={{ color: "var(--text-dim)", fontSize: 13 }}>
-              No categorical columns detected in this dataset.
-            </div>
+          {tab === "preview" ? (
+            <>
+              <p className="table-description">
+                First {profile.preview.length} rows · select a column to inspect
+                {profile.previewTextLimit &&
+                  ` · long text previewed to ${profile.previewTextLimit} characters`}
+              </p>
+              <DataTable
+                label="Dataset preview"
+                columns={[
+                  {
+                    key: rowKey,
+                    label: "#",
+                    type: "numeric",
+                    selectable: false,
+                  },
+                  ...profile.columns.map((key) => ({
+                    key,
+                    type: profile.types[key],
+                  })),
+                ]}
+                rows={preview}
+                selected={selected}
+                onSelect={(key) => {
+                  if (key !== rowKey) setSelected(key);
+                }}
+              />
+            </>
+          ) : (
+            <>
+              <p className="table-description">
+                Descriptive statistics cover the full stored dataset.
+              </p>
+              <DataTable
+                label="Column profiles"
+                columns={[
+                  {
+                    key: "name",
+                    label: "Column",
+                    render: (v) => (
+                      <button
+                        className="text-button"
+                        onClick={() => setSelected(v)}
+                      >
+                        {v}
+                      </button>
+                    ),
+                  },
+                  { key: "type", label: "Type" },
+                  { key: "count", label: "Complete", type: "numeric" },
+                  { key: "missing", label: "Missing", type: "numeric" },
+                  { key: "unique", label: "Distinct", type: "numeric" },
+                  { key: "mean", label: "Mean", type: "numeric" },
+                  { key: "median", label: "Median", type: "numeric" },
+                ]}
+                rows={profile.stats}
+              />
+              {profile.rows > 25000 && (
+                <p className="quiet-note">
+                  Distinct counts and medians are approximate on large tables.
+                  Counts, missing values, ranges, means and histogram bins use
+                  the full dataset.
+                </p>
+              )}
+            </>
           )}
-          {catCols.slice(0, 4).map((c) => {
-            const max = Math.max(...(c.top || []).map((t) => t.count), 1);
-            return (
-              <div key={c.name} style={{ marginBottom: 16 }}>
-                <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>{c.name}</div>
-                {(c.top || []).map((t) => (
-                  <div key={t.value} style={{ marginBottom: 7 }}>
-                    <div
-                      style={{
-                        display: "flex",
-                        justifyContent: "space-between",
-                        fontSize: 12,
-                        marginBottom: 3,
-                        color: "var(--text-dim)",
-                      }}
-                    >
-                      <span>{t.value}</span>
-                      <span>{t.count}</span>
-                    </div>
-                    <div className="bar-track">
-                      <div className="bar-fill" style={{ width: `${(t.count / max) * 100}%` }} />
-                    </div>
-                  </div>
-                ))}
-              </div>
-            );
-          })}
-        </Card>
-      </div>
-
-      <Card title="Data Preview" sub={`First ${Math.min(50, profile.rows)} rows`}>
-        <div className="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                {profile.columns.map((c) => (
-                  <th key={c}>{c}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {profile.preview.map((row, i) => (
-                <tr key={i}>
-                  {profile.columns.map((c) => (
-                    <td key={c}>{formatCell(row[c])}</td>
-                  ))}
-                </tr>
+        </Section>
+        <aside className="column-inspector">
+          <h2>Column details</h2>
+          <label className="inspector-select">
+            Field
+            <select
+              value={selected}
+              onChange={(e) => setSelected(e.target.value)}
+            >
+              {profile.columns.map((c) => (
+                <option key={c}>{c}</option>
               ))}
-            </tbody>
-          </table>
+            </select>
+          </label>
+          <dl className="detail-list">
+            <div>
+              <dt>Type</dt>
+              <dd>{stat.type}</dd>
+            </div>
+            <div>
+              <dt>Complete rows</dt>
+              <dd>{fmt(stat.count, 0)}</dd>
+            </div>
+            <div>
+              <dt>Missing</dt>
+              <dd>{fmt(stat.missing, 0)}</dd>
+            </div>
+          </dl>
+          <div className="distribution">
+            <h3>
+              {stat.type === "numeric"
+                ? "Distribution"
+                : "Most frequent values"}
+            </h3>
+            {stat.type === "numeric" ? (
+              <>
+                <div
+                  className="histogram"
+                  role="img"
+                  aria-label={`Histogram of ${selected}; ${stat.count} complete values`}
+                >
+                  {(stat.histogram || []).map((bin, i) => (
+                    <div
+                      key={i}
+                      title={`${fmt(bin.start)}–${fmt(bin.end)}: ${fmt(bin.count, 0)} values`}
+                      style={{
+                        height: `${Math.max(2, (bin.count / Math.max(1, ...stat.histogram.map((b) => b.count))) * 100)}%`,
+                        background: COLORS[i % 3 === 0 ? 2 : 0],
+                      }}
+                    />
+                  ))}
+                </div>
+                <dl className="detail-list">
+                  <div>
+                    <dt>Minimum</dt>
+                    <dd>{fmt(stat.min)}</dd>
+                  </div>
+                  <div>
+                    <dt>
+                      {stat.medianApproximate ? "Approx. median" : "Median"}
+                    </dt>
+                    <dd>{fmt(stat.median)}</dd>
+                  </div>
+                  <div>
+                    <dt>Maximum</dt>
+                    <dd>{fmt(stat.max)}</dd>
+                  </div>
+                </dl>
+              </>
+            ) : (
+              <ul className="category-list">
+                {stat.top?.map((v, i) => (
+                  <li key={v.value}>
+                    <span
+                      className="category-key"
+                      style={{ background: COLORS[i % COLORS.length] }}
+                    />
+                    <span title={v.value}>{v.value}</span>
+                    <strong>{fmt(v.count, 0)}</strong>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </aside>
+      </div>
+      <Section title="Next steps" className="next-steps">
+        <div>
+          <article>
+            <ArrowLink onClick={() => onNavigate("forecast")}>
+              Forecast a trend
+            </ArrowLink>
+            <p>Explore a time-based pattern in your data.</p>
+          </article>
+          <article>
+            <ArrowLink onClick={() => onNavigate("clustering")}>
+              Find segments
+            </ArrowLink>
+            <p>Group records by their numeric characteristics.</p>
+          </article>
+          <article>
+            <ArrowLink onClick={() => onNavigate("insights")}>
+              Explore relationships
+            </ArrowLink>
+            <p>Compare variables and inspect unusual values.</p>
+          </article>
         </div>
-      </Card>
-    </div>
+      </Section>
+    </>
   );
-}
-
-function formatCell(v) {
-  if (v === null || v === undefined) return "—";
-  if (typeof v === "number") return Number.isInteger(v) ? v : v.toFixed(2);
-  if (typeof v === "string" && v.length > 24) return v.slice(0, 24) + "…";
-  return String(v);
 }

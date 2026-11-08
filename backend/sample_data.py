@@ -64,8 +64,11 @@ def customer_segments(n: int = 600) -> pd.DataFrame:
     spend = np.where(
         kind == 0,
         income * 0.05 + rng.normal(0, 400, n),
-        np.where(kind == 1, income * 0.17 + rng.normal(0, 1500, n),
-                 income * 0.34 + rng.normal(0, 3500, n)),
+        np.where(
+            kind == 1,
+            income * 0.17 + rng.normal(0, 1500, n),
+            income * 0.34 + rng.normal(0, 3500, n),
+        ),
     )
     spend = np.clip(spend, 50, None)
     age = np.where(kind == 2, rng.normal(38, 10, n), rng.normal(48, 14, n)).clip(18, 90)
