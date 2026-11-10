@@ -2,6 +2,8 @@
 
 # AI Data Analyzer
 
+[![View Live Project](https://img.shields.io/badge/🌐_View_Project_Online-00E5FF?style=for-the-badge&logoColor=black)](https://ai-data-analyzer-xa0c.onrender.com/)
+
 A practical workbench for understanding tabular data, exploring patterns and evaluating machine-learning baselines. Built by **Adil Hassan Rather / Rather Builds** with React, FastAPI, DuckDB and scikit-learn.
 
 Version 2 rebuilds the original interface and data lifecycle. It uses a forest-and-stone workspace, distinct chart colors, responsive tables, accessible navigation and subtle motion. More importantly, uploaded datasets are isolated by browser session, large CSVs are stored on disk, and model outputs explain what was actually analyzed.
