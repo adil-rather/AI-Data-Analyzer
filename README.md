@@ -2,7 +2,7 @@
 
 # AI Data Analyzer
 
-[![View Live Project](https://img.shields.io/badge/🌐_View_Project_Online-00E5FF?style=for-the-badge&logoColor=black)](https://ai-data-analyzer-xa0c.onrender.com/)
+[![View Project Online](https://img.shields.io/badge/LIVE_DEMO-View_Project_Online-B85D3B?style=for-the-badge&labelColor=1E352B)](https://ai-data-analyzer-xa0c.onrender.com/)
 
 A practical workbench for understanding tabular data, exploring patterns and evaluating machine-learning baselines. Built by **Adil Hassan Rather / Rather Builds** with React, FastAPI, DuckDB and scikit-learn.
 
